@@ -1,0 +1,1 @@
+.\.venv\Scripts\python -m phone_auto_backup.app

@@ -1,0 +1,16 @@
+[project]
+name = "phone-auto-backup"
+version = "0.1.0"
+description = "Lightweight Windows tray app that auto-backs up photos and videos from a specific Android phone over ADB."
+requires-python = ">=3.10"
+dependencies = [
+    "pillow>=10.0.0",
+    "pystray>=0.19.5",
+]
+
+[project.scripts]
+phone-auto-backup = "phone_auto_backup.app:main"
+
+[tool.ruff]
+line-length = 100
+
