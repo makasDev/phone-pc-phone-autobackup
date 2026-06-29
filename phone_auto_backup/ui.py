@@ -6,7 +6,7 @@ import tkinter as tk
 from tkinter import ttk
 
 
-COPYING_PATTERN = re.compile(r"^(?:Copying|Sending) (?P<index>\d+)/(?P<total>\d+): (?P<file>.+)$")
+COPYING_PATTERN = re.compile(r"^(?:Copying|Sending|Converting) (?P<index>\d+)/(?P<total>\d+): (?P<file>.+)$")
 FOUND_PATTERN = re.compile(r"^Found (?P<scanned>\d+) (?:PC )?files, (?P<new>\d+) new\.$")
 PROGRESS_PATTERN = re.compile(r"Progress: (?P<percent>\d+(?:\.\d+)?)%")
 
@@ -121,14 +121,16 @@ class BackupWindow:
 
         self.status_label.configure(text=message)
 
-        if message in ("Indexing phone media...", "Indexing PC media..."):
+        if message in ("Indexing phone media...", "Indexing PC media...", "Indexing camera uploads..."):
             self.progress.configure(mode="indeterminate")
             self.progress.start(12)
             self.file_label.configure(text=message)
             if message == "Indexing phone media...":
                 self.stats_label.configure(text="Scanning Android's media index.")
-            else:
+            elif message == "Indexing PC media...":
                 self.stats_label.configure(text="Scanning PC source folder.")
+            else:
+                self.stats_label.configure(text="Scanning camera upload folders.")
             return
 
         found = FOUND_PATTERN.match(message)
@@ -151,7 +153,7 @@ class BackupWindow:
             self.count_label.configure(text=f"File {index} of {total}")
             return
 
-        if message.startswith("Backup complete.") or message.startswith("Phone transfer complete."):
+        if message.startswith("Backup complete.") or message.startswith("Phone transfer complete.") or message.startswith("Camera backup complete."):
             self.progress.stop()
             self.progress.configure(mode="determinate", value=100)
             self.file_label.configure(text="Complete")

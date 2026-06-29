@@ -13,6 +13,7 @@ DB_PATH = APP_DIR / "backup_state.sqlite3"
 LOG_PATH = APP_DIR / "phone_auto_backup.log"
 REPORT_PATH = APP_DIR / "last_backup_report.txt"
 TO_PHONE_REPORT_PATH = APP_DIR / "last_to_phone_report.txt"
+CAMERA_REPORT_PATH = APP_DIR / "last_camera_backup_report.txt"
 
 
 @dataclass(slots=True)
@@ -22,6 +23,8 @@ class AppConfig:
     destination: str = str(Path.home() / "Pictures" / "Phone Backup")
     to_phone_source: str = str(Path.home() / "Pictures" / "Phone Backup")
     to_phone_destination: str = "/sdcard/Pictures/Phone Auto Backup"
+    camera_source: str = str(Path.home() / "Pictures" / "Camera Uploads")
+    dng_converter_path: str = r"C:\Program Files\Adobe\Adobe DNG Converter\Adobe DNG Converter.exe"
     adb_path: str = "adb"
     poll_seconds: int = 10
     media_query_timeout_seconds: int = 120
@@ -50,6 +53,10 @@ class AppConfig:
     @property
     def to_phone_source_path(self) -> Path:
         return Path(os.path.expandvars(os.path.expanduser(self.to_phone_source)))
+
+    @property
+    def camera_source_path(self) -> Path:
+        return Path(os.path.expandvars(os.path.expanduser(self.camera_source)))
 
 
 def ensure_app_dir() -> None:

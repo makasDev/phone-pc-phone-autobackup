@@ -9,6 +9,7 @@ from tkinter import Tk, filedialog, messagebox, simpledialog
 from .adb import AdbClient
 from .backup import BackupRunner
 from .to_phone import ToPhoneRunner
+from .camera_backup import CameraBackupRunner
 from .config import CONFIG_PATH, DB_PATH, LOG_PATH, AppConfig, load_config, save_config
 from .state import BackupState
 
@@ -90,6 +91,21 @@ def configure_interactive() -> AppConfig:
     if to_phone_dst:
         config.to_phone_destination = to_phone_dst.strip()
 
+    camera_src = filedialog.askdirectory(
+        title="Choose camera uploads source folder",
+        initialdir=str(config.camera_source_path),
+    )
+    if camera_src:
+        config.camera_source = camera_src
+
+    dng_conv = filedialog.askopenfilename(
+        title="Choose Adobe DNG Converter executable",
+        initialfile="Adobe DNG Converter.exe",
+        filetypes=[("Executable Files", "*.exe"), ("All Files", "*.*")],
+    )
+    if dng_conv:
+        config.dng_converter_path = dng_conv
+
     save_config(config)
     messagebox.showinfo("Phone Auto Backup", f"Saved config:\n{CONFIG_PATH}")
     root.destroy()
@@ -116,11 +132,22 @@ def run_console_to_phone(config: AppConfig) -> int:
         state.close()
 
 
+def run_console_camera(config: AppConfig) -> int:
+    state = BackupState(DB_PATH)
+    try:
+        runner = CameraBackupRunner(config, state, AdbClient(config, config.to_phone_device_serial))
+        runner.run_once(print)
+        return 0
+    finally:
+        state.close()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Auto-back up Android photos over ADB.")
     parser.add_argument("--configure", action="store_true", help="Open first-run configuration dialogs.")
     parser.add_argument("--once", action="store_true", help="Run one backup in the console and exit.")
     parser.add_argument("--to-phone", action="store_true", help="Run one transfer to phone in the console and exit.")
+    parser.add_argument("--camera", action="store_true", help="Run one camera backup in the console and exit.")
     parser.add_argument("--config", action="store_true", help="Print the active config path and exit.")
     args = parser.parse_args(argv)
 
@@ -149,6 +176,13 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Config path: {CONFIG_PATH}")
             return 2
         return run_console_to_phone(config)
+
+    if args.camera:
+        if not config.to_phone_device_serial:
+            print("No destination phone serial is configured yet. Run with --configure first.")
+            print(f"Config path: {CONFIG_PATH}")
+            return 2
+        return run_console_camera(config)
 
     from .tray import TrayApp
 

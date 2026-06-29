@@ -10,7 +10,8 @@ import pystray
 from .adb import AdbClient, AdbError
 from .backup import BackupRunner
 from .to_phone import ToPhoneRunner
-from .config import CONFIG_PATH, LOG_PATH, REPORT_PATH, TO_PHONE_REPORT_PATH, AppConfig
+from .camera_backup import CameraBackupRunner
+from .config import CONFIG_PATH, LOG_PATH, REPORT_PATH, TO_PHONE_REPORT_PATH, CAMERA_REPORT_PATH, AppConfig
 from .state import BackupState
 from .ui import BackupWindow
 
@@ -26,6 +27,7 @@ class TrayApp:
         self.to_phone_adb = AdbClient(config, config.to_phone_device_serial)
         self.runner = BackupRunner(config, state, self.adb)
         self.to_phone_runner = ToPhoneRunner(config, state, self.to_phone_adb)
+        self.camera_runner = CameraBackupRunner(config, state, self.to_phone_adb)
         self.window = BackupWindow()
         self.stop_event = threading.Event()
         self.status = "Waiting for phone..."
@@ -45,15 +47,18 @@ class TrayApp:
         return 0
 
     def _build_menu(self) -> pystray.Menu:
+        is_idle = lambda _: not self.runner.running and not self.to_phone_runner.running and not self.camera_runner.running
         return pystray.Menu(
             pystray.MenuItem(lambda _: self.status, None, enabled=False),
             pystray.MenuItem("Auto-backup enabled", self._toggle_auto_backup, checked=lambda _: self.auto_backup_enabled),
-            pystray.MenuItem("Back up now", self._backup_now, enabled=lambda _: not self.runner.running and not self.to_phone_runner.running),
-            pystray.MenuItem("Transfer to phone now", self._to_phone_now, enabled=lambda _: not self.runner.running and not self.to_phone_runner.running),
+            pystray.MenuItem("Back up now", self._backup_now, enabled=is_idle),
+            pystray.MenuItem("Transfer to phone now", self._to_phone_now, enabled=is_idle),
+            pystray.MenuItem("Back up camera now", self._backup_camera_now, enabled=is_idle),
             pystray.MenuItem("Show progress", self._show_progress),
             pystray.MenuItem("Open destination", self._open_destination),
             pystray.MenuItem("Open last report", self._open_report),
             pystray.MenuItem("Open last to-phone report", self._open_to_phone_report),
+            pystray.MenuItem("Open last camera report", self._open_camera_report),
             pystray.MenuItem("Open config", self._open_config),
             pystray.MenuItem("Open log", self._open_log),
             pystray.MenuItem("Quit", self._quit),
@@ -113,20 +118,42 @@ class TrayApp:
         if self.runner.running:
             return
         thread = threading.Thread(
-            target=self.runner.run_once,
-            kwargs={"status": self._set_status},
+            target=self._run_backup_with_chain,
             name="phone-backup",
             daemon=True,
         )
         thread.start()
 
+    def _run_backup_with_chain(self) -> None:
+        self.runner.run_once(status=self._set_status)
+        try:
+            # If destination phone is connected, automatically start the transfer to phone!
+            serials = self.adb.connected_serials()
+            dest_serial = self.config.to_phone_device_serial.strip()
+            if dest_serial and dest_serial in serials:
+                self._set_status("Backup finished. Automatically starting transfer to receiver phone...")
+                self._start_to_phone_thread()
+        except Exception as exc:
+            LOGGER.exception("Failed to check and start chained transfer")
+
     def _start_to_phone_thread(self) -> None:
-        if self.to_phone_runner.running or self.runner.running:
+        if self.to_phone_runner.running or self.runner.running or self.camera_runner.running:
             return
         thread = threading.Thread(
             target=self.to_phone_runner.run_once,
             kwargs={"status": self._set_status},
             name="phone-transfer",
+            daemon=True,
+        )
+        thread.start()
+
+    def _start_camera_thread(self) -> None:
+        if self.camera_runner.running or self.runner.running or self.to_phone_runner.running:
+            return
+        thread = threading.Thread(
+            target=self.camera_runner.run_once,
+            kwargs={"status": self._set_status},
+            name="camera-backup",
             daemon=True,
         )
         thread.start()
@@ -138,6 +165,10 @@ class TrayApp:
     def _to_phone_now(self, _: object) -> None:
         self.window.show()
         self._start_to_phone_thread()
+
+    def _backup_camera_now(self, _: object) -> None:
+        self.window.show()
+        self._start_camera_thread()
 
     def _show_progress(self, _: object) -> None:
         self.window.show()
@@ -162,6 +193,10 @@ class TrayApp:
         TO_PHONE_REPORT_PATH.touch(exist_ok=True)
         webbrowser.open(TO_PHONE_REPORT_PATH.as_uri())
 
+    def _open_camera_report(self, _: object) -> None:
+        CAMERA_REPORT_PATH.touch(exist_ok=True)
+        webbrowser.open(CAMERA_REPORT_PATH.as_uri())
+
     def _quit(self, _: object) -> None:
         self.stop_event.set()
         self.state.close()
@@ -172,7 +207,7 @@ class TrayApp:
         self.status = message
         self.window.update_status(message)
         self.icon.title = f"Phone Auto Backup - {message[:80]}"
-        is_busy = self.runner.running or self.to_phone_runner.running
+        is_busy = self.runner.running or self.to_phone_runner.running or self.camera_runner.running
         self.icon.icon = self._make_icon("busy" if is_busy else "idle")
         self.icon.update_menu()
 
